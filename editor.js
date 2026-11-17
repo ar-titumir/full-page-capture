@@ -7,6 +7,20 @@ let strokes = [], undone = [], current = null, ready = false, dirty = false;
 let tool = 'pen', job, imageScale = 1;
 let outputWidth = 0, outputHeight = 0, validSize = false;
 let original, cropArea = { x: 0, y: 0 }, cropping = false, cropStart = null, selection = null;
+let cropDrag = null;
+function cropEdge(p) {
+  if (!selection) return '';
+  const rect = ink.getBoundingClientRect();
+  const tx = 9 * ink.width / rect.width, ty = 9 * ink.height / rect.height;
+  const { x, y, width, height } = selection;
+  if (p.x < x - tx || p.x > x + width + tx || p.y < y - ty || p.y > y + height + ty) return '';
+  const horizontal = Math.abs(p.x - x) <= tx ? 'w' : Math.abs(p.x - x - width) <= tx ? 'e' : '';
+  const vertical = Math.abs(p.y - y) <= ty ? 'n' : Math.abs(p.y - y - height) <= ty ? 's' : '';
+  return vertical + horizontal;
+}
+function cropCursor(edge) {
+  return edge ? `${edge}-resize` : 'crosshair';
+}
 const palettes = ['#f4c542', '#fb7185', '#55cfa0', '#60a5fa', '#a78bfa', '#1e293b'];
 const settings = { pen: [100, 5], highlight: [35, 28], rectangle: [100, 5], arrow: [100, 5] };
 const notify = text => $('status').textContent = text;
@@ -19,10 +33,12 @@ function controls() {
   $('restoreCrop').disabled = !ready || cropping || (cropArea.x === 0 && cropArea.y === 0 && base.width === original?.width && base.height === original?.height);
 }
 function cropMode(enabled) {
-  cropping = enabled; cropStart = selection = null;
+  cropping = enabled; cropStart = cropDrag = null;
+  selection = enabled ? { ...cropArea } : null;
+  ink.style.cursor = 'crosshair';
   $('applyCrop').hidden = $('cancelCrop').hidden = !enabled;
   $('applyCrop').disabled = true;
-  $('cropHelp').textContent = enabled ? 'Drag across the image to select an area, then apply. Scroll to select a different section.' : 'Trim your image by selecting an area.';
+  $('cropHelp').textContent = enabled ? 'Drag an image edge or corner inward, or drag inside to select a rectangle. Then apply crop.' : 'Trim your image by selecting an area or dragging its edges.';
   render();
 }
 function setCrop(area) {
@@ -112,6 +128,13 @@ function render() {
     ctx.fillRect(0, 0, ink.width, y); ctx.fillRect(0, y + h, ink.width, ink.height - y - h);
     ctx.fillRect(0, y, x, h); ctx.fillRect(x + w, y, ink.width - x - w, h);
     ctx.strokeStyle = '#5365e8'; ctx.lineWidth = 2; ctx.setLineDash([8, 5]); ctx.strokeRect(x, y, w, h); ctx.restore();
+    const rect = ink.getBoundingClientRect();
+    const hx = 10 * ink.width / rect.width, hy = 10 * ink.height / rect.height;
+    ctx.save(); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#5365e8'; ctx.lineWidth = Math.max(1, ink.width / rect.width);
+    for (const [cx, cy] of [[x,y],[x+w/2,y],[x+w,y],[x,y+h/2],[x+w,y+h/2],[x,y+h],[x+w/2,y+h],[x+w,y+h]]) {
+      ctx.fillRect(cx-hx/2,cy-hy/2,hx,hy); ctx.strokeRect(cx-hx/2,cy-hy/2,hx,hy);
+    }
+    ctx.restore();
   }
   controls();
 }
@@ -122,19 +145,38 @@ function point(event) {
 ink.onpointerdown = event => {
   if (!ready || event.button !== 0 || current) return;
   ink.setPointerCapture(event.pointerId);
-  if (cropping) { cropStart = point(event); selection = null; $('applyCrop').disabled = true; render(); return; }
+  if (cropping) {
+    cropStart = point(event);
+    const edge = cropEdge(cropStart);
+    cropDrag = edge ? { edge, area: { ...selection } } : null;
+    if (!edge) selection = null;
+    ink.style.cursor = cropCursor(edge);
+    $('applyCrop').disabled = true; render(); return;
+  }
   current = { tool, color: $('color').value, opacity: Number($('opacity').value) / 100, width: Number($('thickness').value) * imageScale, points: [point(event)] };
   render();
 };
 ink.onpointermove = event => {
   if (cropping && cropStart) {
     const p = point(event);
+    if (cropDrag) {
+      const {edge, area} = cropDrag;
+      let left = area.x, right = area.x + area.width, top = area.y, bottom = area.y + area.height;
+      const dx = Math.round(p.x - cropStart.x), dy = Math.round(p.y - cropStart.y);
+      if (edge.includes('w')) left = Math.max(cropArea.x, Math.min(right - 1, area.x + dx));
+      if (edge.includes('e')) right = Math.min(cropArea.x + cropArea.width, Math.max(left + 1, area.x + area.width + dx));
+      if (edge.includes('n')) top = Math.max(cropArea.y, Math.min(bottom - 1, area.y + dy));
+      if (edge.includes('s')) bottom = Math.min(cropArea.y + cropArea.height, Math.max(top + 1, area.y + area.height + dy));
+      selection = {x:left,y:top,width:right-left,height:bottom-top};
+    } else {
     const x = Math.round(Math.min(cropStart.x, p.x)), y = Math.round(Math.min(cropStart.y, p.y));
     selection = { x, y, width: Math.round(Math.max(cropStart.x, p.x)) - x, height: Math.round(Math.max(cropStart.y, p.y)) - y };
+    }
     $('applyCrop').disabled = !selection.width || !selection.height;
-    $('cropHelp').textContent = `${selection.width} × ${selection.height} px selected. Apply crop or drag again.`;
+    $('cropHelp').textContent = `${selection.width} × ${selection.height} px selected. Adjust an edge, draw a new rectangle, or apply crop.`;
     render(); return;
   }
+  if (cropping) ink.style.cursor = cropCursor(cropEdge(point(event)));
   if (!current) return;
   const p = point(event), first = current.points[0];
   if (event.shiftKey) {
@@ -145,8 +187,8 @@ ink.onpointermove = event => {
   else current.points.push(p);
   render();
 };
-ink.onpointerup = () => { cropStart = null; if (current) { strokes.push(current); current = null; undone = []; dirty = true; render(); } };
-ink.onpointercancel = ink.onlostpointercapture = () => { cropStart = null; if (current) { current = null; render(); } };
+ink.onpointerup = () => { cropStart = cropDrag = null; if (current) { strokes.push(current); current = null; undone = []; dirty = true; render(); } };
+ink.onpointercancel = ink.onlostpointercapture = () => { cropStart = cropDrag = null; if (current) { current = null; render(); } };
 $('undo').onclick = () => { if (strokes.length) { undone.push(strokes.pop()); dirty = true; render(); } };
 $('redo').onclick = () => { if (undone.length) { strokes.push(undone.pop()); dirty = true; render(); } };
 $('clear').onclick = () => { if (strokes.length && confirm('Clear all annotations?')) { strokes = []; undone = []; dirty = true; render(); } };
@@ -160,6 +202,7 @@ function zoom() {
   if (!ready) return;
   const factor = $('zoom').value === 'fit' ? Math.min(1, Math.max(100, $('viewport').clientWidth - 60) / outputWidth) : Number($('zoom').value);
   $('paper').style.width = `${outputWidth * factor}px`; $('paper').style.height = `${outputHeight * factor}px`;
+  if (cropping) render();
 }
 $('zoom').onchange = zoom;
 new ResizeObserver(zoom).observe($('viewport'));
