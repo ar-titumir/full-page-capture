@@ -153,7 +153,9 @@ The picture preview, saved PNG, and copied image all use your selected dimension
 
 ### Zoom: make editing easier
 
-Choose a value from **Zoom** above the picture. **Fit width** makes the picture fit the available width. A smaller percentage shows more of a long image at once.
+Move the horizontal **Zoom** slider above the picture to choose between **1% and 200%**. For a specific value, type a percentage in the box on its right and press Enter (or click outside the box). The custom box also accepts values above 200%, such as **250** or **400**. If the custom value exceeds 200%, the slider stays at its right end while the box shows the actual zoom.
+
+Click **Fit width** to make the picture fit the available width again. A smaller percentage shows more of a long image at once.
 
 Zoom only changes how large the picture looks while editing. Use **Width** and **Height** to change the size of the saved or copied image.
 
@@ -242,5 +244,7 @@ After editing files, reload the extension at `chrome://extensions` and refresh t
 [Chrome capture API reference](https://developer.chrome.com/docs/extensions/reference/api/tabs#method-captureVisibleTab)
 
 ## License
+
+Created by **ar-titumir** · [azizureee19@gmail.com](mailto:azizureee19@gmail.com). This credit also appears in the extension popup and at the bottom of Capture Studio, including after cropping.
 
 Free and open source under the [MIT License](LICENSE).

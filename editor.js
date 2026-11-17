@@ -198,13 +198,31 @@ window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? $('redo') : $('undo')).click(); }
 });
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+let zoomPercent = 100, fitZoom = true;
 function zoom() {
   if (!ready) return;
-  const factor = $('zoom').value === 'fit' ? Math.min(1, Math.max(100, $('viewport').clientWidth - 60) / outputWidth) : Number($('zoom').value);
+  const factor = fitZoom ? Math.min(1, Math.max(100, $('viewport').clientWidth - 60) / outputWidth) : zoomPercent / 100;
+  const percent = Math.round(factor * 10000) / 100;
+  $('zoom').value = Math.max(1, Math.min(200, percent));
+  $('zoomCustom').value = percent;
+  $('zoomCustom').setCustomValidity('');
+  $('zoomFit').setAttribute('aria-pressed', String(fitZoom));
   $('paper').style.width = `${outputWidth * factor}px`; $('paper').style.height = `${outputHeight * factor}px`;
   if (cropping) render();
 }
-$('zoom').onchange = zoom;
+$('zoom').oninput = () => { fitZoom = false; zoomPercent = Number($('zoom').value); zoom(); };
+function customZoom() {
+  const value = Number($('zoomCustom').value);
+  if (!Number.isFinite(value) || value <= 0) {
+    $('zoomCustom').setCustomValidity('Enter a percentage greater than zero.');
+    $('zoomCustom').reportValidity(); return;
+  }
+  $('zoomCustom').setCustomValidity('');
+  fitZoom = false; zoomPercent = value; zoom();
+}
+$('zoomCustom').onchange = customZoom;
+$('zoomCustom').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); customZoom(); } };
+$('zoomFit').onclick = () => { fitZoom = true; zoom(); };
 new ResizeObserver(zoom).observe($('viewport'));
 async function png() {
   if (!ready || !validSize) throw new Error('Enter valid image dimensions before exporting.');
